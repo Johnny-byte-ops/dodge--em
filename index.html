@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dodge 'Em</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="description" content="Dodge falling blocks and survive as long as you can in this fast-paced arcade game.">
+<style>
+html,body{margin:0;overflow:hidden;font-family:Arial}
+canvas{display:block}
+#menu{
+ position:fixed;inset:0;
+ display:flex;flex-direction:column;
+ align-items:center;justify-content:center;
+ color:white;
+ background:linear-gradient(180deg,#0b2b3a,#02080d)
+}
+button{
+ font-size:22px;padding:14px 30px;
+ border:none;border-radius:14px;
+ background:#7fffd4;color:#043;cursor:pointer
+}
+#ui{position:fixed;top:12px;left:14px;color:white;font-size:18px}
+#high{position:fixed;top:36px;left:14px;color:#7fffd4;font-size:14px}
+#restart{
+ position:fixed;bottom:16px;left:50%;
+ transform:translateX(-50%);
+ display:none
+}
+</style>
+</head>
+<body>
+<div id="menu">
+<h1>DODGE 'EM</h1>
+<p style="opacity:.8">Dodge the falling blocks</p>
+<button onclick="startGame()">PLAY GAME</button>
+</div>
+<div id="ui">Score: 0</div>
+<div id="high">Best: 0</div>
+<button id="restart" onclick="restartGame()">PLAY AGAIN</button>
+<canvas id="c"></canvas>
+
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight}
+resize();addEventListener("resize",resize);
+
+let blocks=[],particles=[],score=0,over=false,spawnTimer=0,loopId=null;
+let best=+localStorage.best||0;
+high.textContent="Best: "+best;
+
+const player={x:0,y:0,s:50,speed:14};
+const keys={};
+let touchX=null;
+
+onkeydown=e=>keys[e.key]=true;
+onkeyup=e=>keys[e.key]=false;
+
+canvas.addEventListener("touchstart",e=>touchX=e.touches[0].clientX);
+canvas.addEventListener("touchmove",e=>touchX=e.touches[0].clientX);
+canvas.addEventListener("touchend",()=>touchX=null);
+
+document.addEventListener("visibilitychange",()=>{
+ if(document.hidden) over=true;
+});
+
+function startGame(){
+ menu.style.display="none";
+ restart.style.display="none";
+ resetGame();
+}
+
+function resetGame(){
+ blocks=[];particles=[];score=0;over=false;
+ player.x=canvas.width/2-player.s/2;
+ player.y=canvas.height-player.s-24;
+ ui.textContent="Score: 0";
+ restart.style.display="none";
+ if(loopId)cancelAnimationFrame(loopId);
+ loop();
+}
+
+function restartGame(){resetGame()}
+
+function loop(){
+ if(over)return;
+
+ const g=ctx.createLinearGradient(0,0,0,canvas.height);
+ g.addColorStop(0,"#0b2b3a");
+ g.addColorStop(1,"#02080d");
+ ctx.fillStyle=g;
+ ctx.fillRect(0,0,canvas.width,canvas.height);
+
+ if(keys.ArrowLeft||keys.a)player.x-=player.speed;
+ if(keys.ArrowRight||keys.d)player.x+=player.speed;
+ if(touchX!==null) player.x+=(touchX-(player.x+player.s/2))*0.15;
+
+ player.x=Math.max(0,Math.min(canvas.width-player.s,player.x));
+ ctx.fillStyle="#7fffd4";
+ ctx.fillRect(player.x,player.y,player.s,player.s);
+
+ spawnTimer++;
+ if(spawnTimer>10){
+  spawnTimer=0;
+  blocks.push({
+   x:Math.random()*(canvas.width-80)+40,
+   y:-60,s:40,
+   speed:7+Math.random()*4,
+   rot:0,rs:(Math.random()-.5)*0.06
+  });
+ }
+
+ for(let i=blocks.length-1;i>=0;i--){
+  const b=blocks[i];
+  b.y+=b.speed;
+  b.rot+=b.rs;
+
+  ctx.save();
+  ctx.translate(b.x,b.y);
+  ctx.rotate(b.rot);
+  ctx.fillStyle="#ff4d4d";
+  ctx.fillRect(-b.s/2,-b.s/2,b.s,b.s);
+  ctx.restore();
+
+  if(player.x<b.x+b.s/2&&player.x+player.s>b.x-b.s/2&&
+     player.y<b.y+b.s/2&&player.y+player.s>b.y-b.s/2){
+     explode(player.x+25,player.y+25);
+     end();
+  }
+
+  if(b.y>canvas.height+80){
+   blocks.splice(i,1);
+   score++;
+   ui.textContent="Score: "+score;
+  }
+ }
+
+ for(let i=particles.length-1;i>=0;i--){
+  const p=particles[i];
+  p.x+=p.vx;p.y+=p.vy;p.life--;
+  ctx.fillStyle=p.c;
+  ctx.fillRect(p.x,p.y,3,3);
+  if(p.life<=0)particles.splice(i,1);
+ }
+
+ loopId=requestAnimationFrame(loop);
+}
+
+function explode(x,y){
+ for(let i=0;i<30;i++){
+  particles.push({
+   x,y,
+   vx:(Math.random()-.5)*6,
+   vy:(Math.random()-.5)*6,
+   life:20+Math.random()*10,
+   c:"#ffb3b3"
+  });
+ }
+}
+
+function end(){
+ over=true;
+ restart.style.display="block";
+ if(score>best){
+  best=score;
+  localStorage.best=best;
+  high.textContent="Best: "+best;
+ }
+}
+</script>
+</body>
+</html>
