@@ -41,6 +41,26 @@ button{
 <canvas id="c"></canvas>
 
 <script>
+
+ function increaseDifficulty() {
+  difficultyLevel++;
+
+  // Increase falling speed
+  blockSpeed += 0.4;
+
+  // Increase block size (but cap it)
+  blockSize = Math.min(blockSize + 3, 80);
+
+  console.log("Difficulty up!", difficultyLevel);
+}
+
+ size: blockSize,
+speed: blockSpeed
+
+
+ let blocksSpawned = 0;
+let difficultyLevel = 1;
+ 
 const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
 function resize(){canvas.width=innerWidth;canvas.height=innerHeight}
 resize();addEventListener("resize",resize);
@@ -109,6 +129,13 @@ function loop(){
    rot:0,rs:(Math.random()-.5)*0.06
   });
  }
+
+ blocksSpawned++;
+
+if (blocksSpawned % 50 === 0) {
+  increaseDifficulty();
+}
+
 
  for(let i=blocks.length-1;i>=0;i--){
   const b=blocks[i];
