@@ -1,0 +1,331 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dodge 'Em Boss Battle</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+html,body{margin:0;overflow:hidden;font-family:Arial}
+canvas{display:block}
+#menu{
+  position:fixed; inset:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  color:white;
+  background:linear-gradient(180deg,#0b2b3a,#02080d)
+}
+button{
+  font-size:22px;padding:14px 30px;
+  border:none;border-radius:14px;
+  background:#7fffd4;color:#043;cursor:pointer
+}
+#ui{position:fixed;top:12px;left:14px;color:white;font-size:18px}
+#high{position:fixed;top:36px;left:14px;color:#7fffd4;font-size:14px}
+#restart{
+  position:fixed;bottom:20px;left:50%;
+  transform:translateX(-50%);
+  display:none
+}
+</style>
+</head>
+<body>
+
+
+<div id="menu">
+  <h1>DODGE 'EM</h1>
+  <p style="opacity:.8">Dodge the falling blocks</p>
+  <button id="playBtn">PLAY GAME</button>
+</div>
+
+
+<div id="ui">Score: 0</div>
+<div id="high">Best: 0</div>
+<button id="restart">PLAY AGAIN</button>
+<canvas id="c"></canvas>
+
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const ui = document.getElementById("ui");
+const restart = document.getElementById("restart");
+const menu = document.getElementById("menu");
+const high = document.getElementById("high");
+const playBtn = document.getElementById("playBtn");
+
+
+let blocks=[], particles=[], bullets=[];
+let score=0, best=+localStorage.best||0;
+high.textContent="Best: "+best;
+
+
+let blockSize=30, blockSpeed=8, spawnTimer=0, blocksSpawned=0;
+let difficultyLevel=1, over=false, loopId=null;
+
+
+const player={x:0,y:0,s:50,speed:14};
+const keys={}; let touchX=null; let gamepadIndex=null;
+
+
+// Boss variables
+let boss=null, bossHP=0, bossActive=false, bossLevel=1;
+
+
+function resize(){
+  canvas.width=innerWidth;
+  canvas.height=innerHeight;
+  player.x=canvas.width/2-player.s/2;
+  player.y=canvas.height-player.s-24;
+}
+resize(); addEventListener("resize", resize);
+
+
+// Inputs
+onkeydown=e=>{
+  keys[e.key]=true;
+  if(e.key===" ") shootBullet();
+};
+onkeyup=e=>keys[e.key]=false;
+
+
+window.addEventListener("gamepadconnected",e=>gamepadIndex=e.gamepad.index);
+window.addEventListener("gamepaddisconnected",e=>{if(gamepadIndex===e.gamepad.index) gamepadIndex=null;});
+
+
+canvas.addEventListener("touchstart", e=>touchX=e.touches[0].clientX);
+canvas.addEventListener("touchmove", e=>touchX=e.touches[0].clientX);
+canvas.addEventListener("touchend", ()=>touchX=null);
+
+
+document.addEventListener("visibilitychange", ()=>{if(document.hidden) over=true;});
+
+
+playBtn.onclick=startGame;
+restart.onclick=startGame;
+
+
+// Shoot bullets
+function shootBullet(){
+  bullets.push({
+    x:player.x+player.s/2-5,
+    y:player.y,
+    w:10,h:20,
+    speed:12
+  });
+}
+
+
+// Start game
+function startGame(){
+  menu.style.display="none";
+  restart.style.display="none";
+  resetGame();
+}
+
+
+// Reset game
+function resetGame(){
+  blocks=[];particles=[];bullets=[];
+  score=0; over=false; spawnTimer=0; blocksSpawned=0;
+  difficultyLevel=1; blockSize=30; blockSpeed=8;
+  bossActive=false; bossHP=0; boss=null;
+  ui.textContent="Score: 0";
+  resize();
+  if(loopId) cancelAnimationFrame(loopId);
+  loop();
+}
+
+
+// Main loop
+function loop(){
+  if(over) return;
+
+
+  blockSpeed+=0.002;
+
+
+  // Background
+  const g=ctx.createLinearGradient(0,0,0,canvas.height);
+  g.addColorStop(0,"#0b2b3a");
+  g.addColorStop(1,"#02080d");
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+
+  // Player movement
+  let moveX=0;
+  if(keys.ArrowLeft) moveX-=player.speed;
+  if(keys.ArrowRight) moveX+=player.speed;
+
+
+  if(gamepadIndex!==null){
+    const gp=navigator.getGamepads()[gamepadIndex];
+    if(gp){
+      const axis=gp.axes[0];
+      if(Math.abs(axis)>0.15) moveX+=axis*player.speed*1.5;
+      if(gp.buttons[14].pressed) moveX-=player.speed;
+      if(gp.buttons[15].pressed) moveX+=player.speed;
+    }
+  }
+  if(touchX!==null) moveX+=(touchX-(player.x+player.s/2))*0.15;
+  player.x+=moveX;
+  player.x=Math.max(0,Math.min(canvas.width-player.s,player.x));
+
+
+  // Draw player
+  ctx.fillStyle="#7fffd4";
+  ctx.fillRect(player.x,player.y,player.s,player.s);
+
+
+  // Boss spawn every 300 points
+  if(!bossActive && score>0 && score%300===0){
+    bossActive=true;
+    bossHP=15 + bossLevel*5;
+    boss={x:canvas.width/2, y:-canvas.height*0.2, w:canvas.width*0.9, h:canvas.height*0.2, attackTimer:0, speed:2};
+    blockSize=30; blockSpeed=10; difficultyLevel=1; blocksSpawned=0;
+  }
+
+
+  // Boss logic
+  if(bossActive){
+    // Move boss down until it reaches near top of player
+    if(boss.y<player.y*0.3) boss.y+=boss.speed;
+
+
+    ctx.fillStyle="#ff4d4d";
+    ctx.fillRect(boss.x-boss.w/2, boss.y-boss.h/2, boss.w, boss.h);
+
+
+    ctx.fillStyle="white";
+    ctx.font="24px Arial";
+    ctx.fillText("Boss HP: "+bossHP,boss.x-60,boss.y-boss.h/2-10);
+
+
+    boss.attackTimer++;
+    if(boss.attackTimer>12){ // faster attack
+      boss.attackTimer=0;
+      blocks.push({
+        x:Math.random()*(canvas.width-blockSize),
+        y:boss.y+boss.h/2,
+        s:blockSize,
+        speed:blockSpeed*0.9 + bossLevel*0.7,
+        rot:0,
+        rs:(Math.random()-0.5)*0.05
+      });
+    }
+  }
+
+
+  // Spawn normal blocks if no boss
+  if(!bossActive){
+    spawnTimer++;
+    if(spawnTimer>10){
+      spawnTimer=0;
+      blocksSpawned++;
+      if(blocksSpawned%50===0){
+        difficultyLevel++;
+        blockSize+=5;
+      }
+      blocks.push({
+        x:Math.random()*(canvas.width-blockSize),
+        y:-blockSize,
+        s:blockSize,
+        speed:blockSpeed+difficultyLevel*0.5,
+        rot:0,
+        rs:(Math.random()-0.5)*0.05
+      });
+    }
+  }
+
+
+  // Update blocks
+  for(let i=blocks.length-1;i>=0;i--){
+    const b=blocks[i];
+    b.y+=b.speed;
+    b.rot+=b.rs;
+
+
+    ctx.save();
+    ctx.translate(b.x+b.s/2,b.y+b.s/2);
+    ctx.rotate(b.rot);
+    ctx.fillStyle="#ff4d4d";
+    ctx.fillRect(-b.s/2,-b.s/2,b.s,b.s);
+    ctx.restore();
+
+
+    if(player.x<b.x+b.s && player.x+player.s>b.x &&
+       player.y<b.y+b.s && player.y+player.s>b.y){
+      explode(player.x+player.s/2, player.y+player.s/2);
+      endGame();
+    }
+
+
+    if(b.y>canvas.height+80) blocks.splice(i,1);
+  }
+
+
+  // Bullets
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];
+    b.y-=b.speed;
+    ctx.fillStyle="#00FFFF";
+    ctx.fillRect(b.x,b.y,b.w,b.h);
+
+
+    if(bossActive &&
+       b.x<boss.x+boss.w/2 && b.x+b.w>boss.x-boss.w/2 &&
+       b.y<boss.y+boss.h/2 && b.y+b.h>boss.y-boss.h/2){
+      bossHP--;
+      bullets.splice(i,1);
+      if(bossHP<=0){
+        bossActive=false;
+        bossLevel++;
+      }
+    }
+
+
+    if(b.y+b.h<0) bullets.splice(i,1);
+  }
+
+
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx; p.y+=p.vy; p.life--;
+    ctx.fillStyle=p.c;
+    ctx.fillRect(p.x,p.y,3,3);
+    if(p.life<=0) particles.splice(i,1);
+  }
+
+
+  loopId=requestAnimationFrame(loop);
+}
+
+
+function explode(x,y){
+  for(let i=0;i<30;i++){
+    particles.push({
+      x,y,
+      vx:(Math.random()-0.5)*6,
+      vy:(Math.random()-0.5)*6,
+      life:20+Math.random()*10,
+      c:"#ffb3b3"
+    });
+  }
+}
+
+
+function endGame(){
+  over=true;
+  restart.style.display="block";
+  if(score>best){
+    best=score;
+    localStorage.best=best;
+    high.textContent="Best: "+best;
+  }
+}
+</script>
+
+
+</body>
+</html>
