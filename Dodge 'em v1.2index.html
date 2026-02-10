@@ -1,0 +1,259 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dodge 'Em</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html,body{margin:0;overflow:hidden;background:black;font-family:Arial}
+canvas{display:block}
+#ui{position:fixed;top:12px;left:14px;color:white;font-size:18px}
+#menu{position:fixed;inset:0;display:flex;flex-direction:column;
+align-items:center;justify-content:center;
+background:linear-gradient(180deg,#0b2b3a,#02080d);color:white}
+button{font-size:22px;padding:14px 30px;border:none;border-radius:14px;
+background:#7fffd4;color:#043;cursor:pointer}
+#restart{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+display:none}
+</style>
+</head>
+
+
+<body>
+<div id="menu">
+<h1>DODGE 'EM</h1>
+<button onclick="startGame()">PLAY</button>
+</div>
+
+
+<div id="ui"></div>
+<button id="restart" onclick="startGame()">PLAY AGAIN</button>
+<canvas id="c"></canvas>
+
+
+<script>
+const canvas=c,ctx=canvas.getContext("2d");
+const ui=document.getElementById("ui");
+const menu=document.getElementById("menu");
+const restart=document.getElementById("restart");
+
+
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight}
+resize();addEventListener("resize",resize);
+
+
+// ---------- BACKGROUND ----------
+let bgT=0;
+const stars=[];
+for(let i=0;i<120;i++)
+stars.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,
+s:Math.random()*2+1,v:Math.random()*0.4+0.1});
+
+
+function drawBG(){
+bgT+=0.002;
+const g=ctx.createLinearGradient(0,0,0,canvas.height);
+g.addColorStop(0,`hsl(${200+Math.sin(bgT)*10},50%,15%)`);
+g.addColorStop(1,"#02080d");
+ctx.fillStyle=g;ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle="rgba(255,255,255,.6)";
+for(const s of stars){
+s.y+=s.v;if(s.y>canvas.height){s.y=0;s.x=Math.random()*canvas.width}
+ctx.fillRect(s.x,s.y,s.s,s.s)
+}
+}
+
+
+// ---------- GAME ----------
+let blocks=[],bullets=[],particles=[];
+let score=0,high=localStorage.getItem("dodgeHigh")||0;
+let blockSpeed=7,blockSize=40,spawn=0,over=false;
+let boss=null,bossLevel=0;
+
+
+const player={x:0,y:0,s:50,speed:14};
+const keys={};
+onkeydown=e=>keys[e.code]=true;
+onkeyup=e=>keys[e.code]=false;
+
+
+function explode(x,y,c="#ff4d4d",n=25){
+for(let i=0;i<n;i++)
+particles.push({x,y,vx:(Math.random()-.5)*8,
+vy:(Math.random()-.5)*8,life:40,c})
+}
+
+
+function startGame(){
+menu.style.display="none";restart.style.display="none";
+blocks=[];bullets=[];particles=[];
+score=0;blockSpeed=7;blockSize=40;
+boss=null;bossLevel=0;over=false;
+player.x=canvas.width/2-player.s/2;
+player.y=canvas.height-player.s-20;
+ui.innerHTML=`Score: 0<br>High: ${high}`;
+loop();
+}
+
+
+function loop(){
+if(over)return;
+drawBG();
+
+
+// movement
+if(keys.ArrowLeft)player.x-=player.speed;
+if(keys.ArrowRight)player.x+=player.speed;
+player.x=Math.max(0,Math.min(canvas.width-player.s,player.x));
+
+
+// shoot
+if(keys.Space){
+if(bullets.length<6)
+bullets.push({x:player.x+player.s/2-4,y:player.y,v:16});
+keys.Space=false;
+}
+
+
+ctx.fillStyle="#7fffd4";
+ctx.fillRect(player.x,player.y,player.s,player.s);
+
+
+// normal blocks
+if(!boss){
+spawn++;
+if(spawn>10){
+spawn=0;
+blocks.push({x:Math.random()*(canvas.width-blockSize),
+y:-blockSize,s:blockSize,speed:blockSpeed,
+rot:Math.random()*Math.PI,rs:(Math.random()*.08)-.04});
+}
+}
+
+
+// blocks update
+for(let i=blocks.length-1;i>=0;i--){
+const b=blocks[i];
+b.y+=b.speed;b.rot+=b.rs;
+ctx.save();
+ctx.translate(b.x+b.s/2,b.y+b.s/2);
+ctx.rotate(b.rot);
+ctx.fillStyle="#ff4d4d";
+ctx.fillRect(-b.s/2,-b.s/2,b.s,b.s);
+ctx.restore();
+
+
+if(player.x<b.x+b.s&&player.x+player.s>b.x&&
+player.y<b.y+b.s&&player.y+player.s>b.y){
+explode(player.x+25,player.y+25,"#7fffd4",50);
+endGame();return;
+}
+
+
+if(b.y>canvas.height){
+blocks.splice(i,1);
+score++;ui.innerHTML=`Score: ${score}<br>High: ${high}`;
+if(score%300===0)spawnBoss();
+}
+}
+
+
+// ---------- BOSS ----------
+if(boss){
+if(boss.y<60) boss.y+=boss.speed;
+
+
+ctx.fillStyle="#ff4d4d";
+ctx.fillRect(boss.x,boss.y,boss.s,boss.s);
+
+
+// rain attack (FIXED)
+if(Math.random()<0.35){
+blocks.push({
+x:boss.x+Math.random()*boss.s,
+y:boss.y+boss.s,
+s:40,
+speed:blockSpeed+bossLevel,
+rot:0,
+rs:(Math.random()*.1)-.05
+});
+}
+
+
+// health bar
+const w=300;
+ctx.fillStyle="#222";
+ctx.fillRect(canvas.width/2-w/2,20,w,12);
+ctx.fillStyle="#ff4d4d";
+ctx.fillRect(canvas.width/2-w/2,20,w*(boss.hp/boss.max),12);
+}
+
+
+// bullets
+for(let i=bullets.length-1;i>=0;i--){
+const bu=bullets[i];
+bu.y-=bu.v;
+ctx.fillStyle="white";
+ctx.fillRect(bu.x,bu.y,8,16);
+
+
+// hit blocks
+for(let j=blocks.length-1;j>=0;j--){
+const b=blocks[j];
+if(bu.x<b.x+b.s&&bu.x+8>b.x&&
+bu.y<b.y+b.s&&bu.y+16>b.y){
+explode(b.x+b.s/2,b.y+b.s/2);
+blocks.splice(j,1);
+bullets.splice(i,1);
+break;
+}
+}
+
+
+// hit boss (only once settled)
+if(boss&&boss.y>=60&&
+bu.x<boss.x+boss.s&&bu.x+8>boss.x&&
+bu.y<boss.y+boss.s&&bu.y+16>boss.y){
+boss.hp--;bullets.splice(i,1);
+if(boss.hp<=0){
+explode(boss.x+boss.s/2,boss.y+boss.s/2,"#ff4d4d",100);
+boss=null;blockSpeed+=2;blockSize+=5;
+}
+}
+
+
+if(bu.y<0)bullets.splice(i,1);
+}
+
+
+// particles
+for(let i=particles.length-1;i>=0;i--){
+const p=particles[i];
+p.x+=p.vx;p.y+=p.vy;p.life--;
+ctx.fillStyle=p.c;ctx.fillRect(p.x,p.y,4,4);
+if(p.life<=0)particles.splice(i,1);
+}
+
+
+requestAnimationFrame(loop);
+}
+
+
+function spawnBoss(){
+bossLevel++;
+boss={x:canvas.width/2-250,y:-500,s:500,
+hp:18+bossLevel*8,max:18+bossLevel*8,
+speed:1.2+bossLevel*.3};
+blocks=[];
+}
+
+
+function endGame(){
+over=true;
+if(score>high){high=score;localStorage.setItem("dodgeHigh",high)}
+ui.innerHTML=`Score: ${score}<br>High: ${high}`;
+restart.style.display="block";
+}
+</script>
+</body>
+</html>
